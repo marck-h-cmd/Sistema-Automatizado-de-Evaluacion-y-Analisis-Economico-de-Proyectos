@@ -1,9 +1,12 @@
 import streamlit as st
 import json
+import io
 from datetime import datetime
 from src.utils.eval_basica import calcular_vpn, calcular_tir, calcular_bc, calcular_periodo_recuperacion
+from src.utils.informe import crear_informe_pdf, generar_nombre_archivo_pdf
 import pandas as pd 
 from plotly import graph_objects as go
+from src.utils.ai import consultar_groq, project_context
 
 def show_informe_form(fecha_analisis,analista):
     st.header("📋 Informe Ejecutivo Completo")
@@ -270,61 +273,35 @@ def show_informe_form(fecha_analisis,analista):
         with col2:
             st.markdown("### Consultas Sugeridas")
             if st.button("💡 Analizar Riesgos", use_container_width=True):
-                consulta_ia = "Analiza los principales riesgos de este proyecto de inversión"
-            
+                st.session_state['consulta_ia_activa'] = "Analiza los principales riesgos de este proyecto de inversión"
+                
             if st.button("📈 Mejorar Rentabilidad", use_container_width=True):
-                consulta_ia = "¿Cómo puedo mejorar la rentabilidad del proyecto?"
+                st.session_state['consulta_ia_activa'] = "¿Cómo puedo mejorar la rentabilidad del proyecto?"
             
             if st.button("🎯 Estrategias", use_container_width=True):
-                consulta_ia = "Sugiere estrategias de implementación"
+                st.session_state['consulta_ia_activa'] = "Sugiere estrategias de implementación"
         
         if st.button("🚀 Consultar a la IA", type="primary", use_container_width=True):
-            if consulta_ia:
-                with st.spinner("🤖 El asistente de IA está analizando tu proyecto..."):
-                    # Preparar contexto del proyecto
-                    contexto = f"""
-                    Proyecto: {proyecto['nombre']}
-                    Inversión: ${proyecto['inversion']:,.2f}
-                    Periodos: {proyecto['periodos']} años
-                    VPN: ${vpn:,.2f}
-                    TIR: {tir:.2f}%
-                    B/C: {bc:.2f}
-                    Tasa de descuento: {proyecto['tasa_descuento']}%
-                    TMAR: {proyecto['tmar']}%
-                    
-                    Consulta del usuario: {consulta_ia}
-                    """
-                    
-                    st.info("""
-                    💬 **Nota**: Esta es una versión demo. En la versión completa con API conectada, 
-                    el asistente de IA proporcionaría un análisis detallado considerando:
-                    
-                    - Contexto completo del proyecto
-                    - Análisis de indicadores financieros
-                    - Identificación de riesgos y oportunidades
-                    - Recomendaciones personalizadas
-                    - Mejores prácticas de la industria
-                    - Estrategias de optimización
-                    
-                    **Respuesta simulada basada en los datos del proyecto:**
-                    
-                    Basándome en el análisis de tu proyecto "{proyecto['nombre']}", te puedo indicar que:
-                    
-                    1. **Viabilidad Financiera**: Con un VPN de ${vpn:,.2f} y una TIR de {tir:.2f}%, 
-                       el proyecto {'muestra indicadores positivos' if vpn > 0 else 'requiere revisión de supuestos'}.
-                    
-                    2. **Análisis de Riesgo**: La relación B/C de {bc:.2f} indica que {'cada peso invertido genera valor adicional' if bc > 1 else 'se debe evaluar la estructura de flujos'}.
-                    
-                    3. **Recomendaciones Clave**:
-                       - Monitorear variables críticas como flujos de caja y tasa de descuento
-                       - Implementar un sistema de seguimiento de indicadores
-                       - Considerar escenarios de contingencia
-                       - Evaluar opciones de financiamiento para optimizar el WACC
-                    
-                    4. **Próximos Pasos**: {'Proceder con la implementación bajo supervisión continua' if decision == 'ACEPTAR' else 'Revisar supuestos y buscar alternativas de mejora' if decision == 'REVISAR' else 'Considerar alternativas de inversión más rentables'}.
-                    """)
-            else:
-                st.warning("⚠️ Por favor, escribe tu consulta para el asistente de IA.")
+            if consulta_ia or 'consulta_ia_activa' in st.session_state:
+                consulta_final = st.session_state.get('consulta_ia_activa', consulta_ia)
+                if consulta_final:
+                    st.session_state['consulta_ia_activa'] = consulta_final
+        
+        # Contenedor para mostrar respuestas de IA
+        if 'consulta_ia_activa' in st.session_state and st.session_state['consulta_ia_activa']:
+            st.markdown("---")
+            st.markdown("### 📊 Respuesta del Asistente de IA")
+            
+            with st.spinner("🤖 El asistente de IA está analizando tu proyecto..."):
+                consulta_final = st.session_state['consulta_ia_activa']
+                context = project_context(proyecto, vpn, tir, bc, consulta_final)
+                response = consultar_groq(context)
+                st.info(response)
+                
+                # Limpiar la variable para la siguiente consulta
+                if st.button("🔄 Nueva Consulta", use_container_width=False):
+                    del st.session_state['consulta_ia_activa']
+                    st.rerun()
         
         # Exportar informe
         st.markdown("---")
@@ -334,37 +311,110 @@ def show_informe_form(fecha_analisis,analista):
         
         with col1:
             if st.button("📄 Exportar a PDF", use_container_width=True):
-                st.info("Funcionalidad de exportación disponible en versión completa")
+                with st.spinner("⏳ Generando PDF..."):
+                    try:
+                        # Generar PDF
+                        pdf_buffer = crear_informe_pdf(proyecto, fecha_analisis, analista)
+                        nombre_archivo = generar_nombre_archivo_pdf(proyecto['nombre'])
+                        
+                        st.download_button(
+                            label="✅ Descargar PDF",
+                            data=pdf_buffer,
+                            file_name=nombre_archivo,
+                            mime="application/pdf",
+                            key="download_pdf"
+                        )
+                        st.success("✅ PDF generado exitosamente")
+                    except Exception as e:
+                        st.error(f"❌ Error al generar PDF: {str(e)}")
         
         with col2:
             if st.button("📊 Exportar a Excel", use_container_width=True):
-                st.info("Funcionalidad de exportación disponible en versión completa")
+                with st.spinner("⏳ Generando Excel..."):
+                    try:
+                        # Preparar datos para Excel
+                        periodos = list(range(len(proyecto['flujos'])))
+                        tasa = proyecto['tasa_descuento'] / 100
+                        
+                        # Crear DataFrame con flujos
+                        df_flujos = pd.DataFrame({
+                            'Periodo': periodos,
+                            'Flujo de Caja': proyecto['flujos'],
+                            'Flujo Acumulado': [sum(proyecto['flujos'][:i+1]) for i in periodos],
+                            'Valor Presente': [proyecto['flujos'][i] / (1 + tasa)**i for i in periodos],
+                            'VP Acumulado': [sum([proyecto['flujos'][j] / (1 + tasa)**j for j in range(i+1)]) for i in periodos]
+                        })
+                        
+                        # Crear archivo Excel en memoria
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            # Hoja 1: Resumen Ejecutivo
+                            df_resumen = pd.DataFrame({
+                                'Indicador': ['Inversión Total', 'VPN', 'TIR', 'B/C', 'Tasa Descuento', 'TMAR', 'Periodo Recuperación', 'Decisión'],
+                                'Valor': [
+                                    f"${proyecto['inversion']:,.2f}",
+                                    f"${vpn:,.2f}",
+                                    f"{tir:.2f}%" if tir else "N/A",
+                                    f"{bc:.2f}",
+                                    f"{proyecto['tasa_descuento']}%",
+                                    f"{proyecto['tmar']}%",
+                                    str(proyecto.get('pr', 'N/A')),
+                                    decision
+                                ]
+                            })
+                            df_resumen.to_excel(writer, sheet_name='Resumen', index=False)
+                            
+                            # Hoja 2: Flujos de Caja
+                            df_flujos.to_excel(writer, sheet_name='Flujos de Caja', index=False)
+                        
+                        output.seek(0)
+                        
+                        # Generar nombre de archivo
+                        fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        nombre_archivo_excel = f"Informe_{proyecto['nombre'].replace(' ', '_')}_{fecha_str}.xlsx"
+                        
+                        st.download_button(
+                            label="✅ Descargar Excel",
+                            data=output,
+                            file_name=nombre_archivo_excel,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="download_excel"
+                        )
+                        st.success("✅ Excel generado exitosamente")
+                    except Exception as e:
+                        st.error(f"❌ Error al generar Excel: {str(e)}")
         
         with col3:
             # Generar JSON con datos del proyecto
-            datos_proyecto = {
-                'proyecto': proyecto['nombre'],
-                'fecha_analisis': fecha_analisis.strftime('%Y-%m-%d'),
-                'analista': analista,
-                'inversion': proyecto['inversion'],
-                'periodos': proyecto['periodos'],
-                'flujos': proyecto['flujos'],
-                'tasa_descuento': proyecto['tasa_descuento'],
-                'tmar': proyecto['tmar'],
-                'indicadores': {
-                    'vpn': vpn,
-                    'tir': tir,
-                    'bc': bc,
-                    'periodo_recuperacion': proyecto['pr']
-                },
-                'decision': decision
-            }
-            
-            json_str = json.dumps(datos_proyecto, indent=2)
-            st.download_button(
-                label="💾 Descargar JSON",
-                data=json_str,
-                file_name=f"proyecto_{proyecto['nombre'].replace(' ', '_')}.json",
-                mime="application/json",
-                use_container_width=True
-            )
+            if st.button("💾 Exportar a JSON", use_container_width=True):
+                try:
+                    datos_proyecto = {
+                        'proyecto': proyecto['nombre'],
+                        'fecha_analisis': fecha_analisis.strftime('%Y-%m-%d'),
+                        'analista': analista,
+                        'inversion': proyecto['inversion'],
+                        'periodos': proyecto['periodos'],
+                        'flujos': proyecto['flujos'],
+                        'tasa_descuento': proyecto['tasa_descuento'],
+                        'tmar': proyecto['tmar'],
+                        'indicadores': {
+                            'vpn': vpn,
+                            'tir': tir,
+                            'bc': bc,
+                            'periodo_recuperacion': proyecto['pr']
+                        },
+                        'decision': decision
+                    }
+                    
+                    json_str = json.dumps(datos_proyecto, indent=2)
+                    
+                    st.download_button(
+                        label="✅ Descargar JSON",
+                        data=json_str,
+                        file_name=f"proyecto_{proyecto['nombre'].replace(' ', '_')}.json",
+                        mime="application/json",
+                        key="download_json"
+                    )
+                    st.success("✅ JSON generado exitosamente")
+                except Exception as e:
+                    st.error(f"❌ Error al generar JSON: {str(e)}")
