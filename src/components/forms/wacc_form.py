@@ -3,6 +3,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 from src.utils.wacc import calcular_wacc
 from src.utils.eval_basica import calcular_vpn, calcular_tir
+from src.utils.ai import consultar_groq, project_context
 import numpy as np
 
 def show_wacc_form():
@@ -67,9 +68,6 @@ def show_wacc_form():
         - Rm: Prima de mercado
         - Rp: Riesgo país
         """)
-        
-        if st.button("🤖 Explicar WACC con IA", use_container_width=True):
-            st.info("💬 Explicación detallada disponible en versión completa")
     
     # Cálculos
     wacc = calcular_wacc(patrimonio, deuda, costo_patrimonio, costo_deuda, tasa_impuesto)
@@ -105,7 +103,45 @@ def show_wacc_form():
         st.metric("D/E Ratio", f"{(deuda/patrimonio):.2f}" if patrimonio > 0 else "N/A",
                  delta="Apalancamiento")
     
+    # Botón de análisis IA
+    st.markdown("---")
+    col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
+    with col_btn2:
+        if st.button("🤖 Explicar WACC con IA", key="ia_wacc", use_container_width=True):
+            with st.spinner("Consultando al asistente de IA..."):
+                # Crear contexto específico para WACC
+                contexto_wacc = f"""
+                Análisis del Costo de Capital (WACC):
+                
+                Estructura de Capital:
+                - Patrimonio: ${patrimonio:,.2f} ({prop_patrimonio*100:.1f}%)
+                - Deuda: ${deuda:,.2f} ({prop_deuda*100:.1f}%)
+                - Total inversión: ${total_inversion:,.2f}
+                
+                Costos:
+                - Costo del Patrimonio: {costo_patrimonio:.2f}%
+                - Costo de la Deuda: {costo_deuda:.2f}%
+                - Tasa de Impuesto: {tasa_impuesto:.2f}%
+                - WACC Calculado: {wacc:.2f}%
+                - Ke (CAPM): {ke_capm:.2f}%
+                
+                Métricas:
+                - Escudo Fiscal Anual: ${escudo_fiscal:,.2f}
+                - Relación D/E: {f"{(deuda/patrimonio):.2f}" if patrimonio > 0 else 'N/A'}
+                
+                Pregunta: Explica de manera clara y profesional qué significa este WACC, cómo afecta la estructura de capital al costo de financiamiento, y qué recomendaciones darías sobre la estructura actual. Incluye análisis sobre el beneficio del escudo fiscal.
+                """
+                respuesta_ia = consultar_groq(contexto_wacc, max_tokens=800)
+                st.session_state.respuesta_ia_wacc = respuesta_ia
+    
+    # Mostrar análisis de IA si existe
+    if 'respuesta_ia_wacc' in st.session_state:
+        st.markdown("---")
+        st.markdown("### 🤖 Explicación Inteligente del WACC")
+        st.info(st.session_state.respuesta_ia_wacc)
+    
     # Gráficos
+    st.markdown("---")
     col1, col2 = st.columns(2)
     
     with col1:

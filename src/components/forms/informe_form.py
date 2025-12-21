@@ -1,12 +1,14 @@
 import streamlit as st
 import json
 import io
+import re
 from datetime import datetime
 from src.utils.eval_basica import calcular_vpn, calcular_tir, calcular_bc, calcular_periodo_recuperacion
 from src.utils.informe import crear_informe_pdf, generar_nombre_archivo_pdf
 import pandas as pd 
 from plotly import graph_objects as go
 from src.utils.ai import consultar_groq, project_context
+from src.utils.email import enviar_email_con_attachment
 
 def show_informe_form(fecha_analisis,analista):
     st.header("📋 Informe Ejecutivo Completo")
@@ -310,24 +312,64 @@ def show_informe_form(fecha_analisis,analista):
         col1, col2, col3 = st.columns(3)
         
         with col1:
+            # Generar PDF y guardarlo en session_state para que persista entre reruns
             if st.button("📄 Exportar a PDF", use_container_width=True):
                 with st.spinner("⏳ Generando PDF..."):
                     try:
-                        # Generar PDF
                         pdf_buffer = crear_informe_pdf(proyecto, fecha_analisis, analista)
+                        pdf_bytes = pdf_buffer.getvalue()
                         nombre_archivo = generar_nombre_archivo_pdf(proyecto['nombre'])
-                        
-                        st.download_button(
-                            label="✅ Descargar PDF",
-                            data=pdf_buffer,
-                            file_name=nombre_archivo,
-                            mime="application/pdf",
-                            key="download_pdf"
-                        )
-                        st.success("✅ PDF generado exitosamente")
+
+                        # Guardar en session_state
+                        st.session_state['last_pdf_bytes'] = pdf_bytes
+                        st.session_state['last_pdf_name'] = nombre_archivo
+                        st.session_state['pdf_generated'] = True
+
+                        st.success("✅ PDF generado y listo para descargar")
                     except Exception as e:
                         st.error(f"❌ Error al generar PDF: {str(e)}")
-        
+
+            # Si hay un PDF generado en sesión, mostrar controles persistentes
+            if st.session_state.get('pdf_generated'):
+                # Mostrar descarga y botón de envío lado a lado
+                col_down, col_send = st.columns([1,1])
+                with col_down:
+                    st.download_button(
+                        label="✅ Descargar PDF",
+                        data=st.session_state['last_pdf_bytes'],
+                        file_name=st.session_state['last_pdf_name'],
+                        mime="application/pdf",
+                        key="download_pdf"
+                    )
+                with col_send:
+                    # Enviar por email usando el email en session_state; mensajes solo aparecen al clic
+                    if st.button("📧 Enviar por Email", key="send_pdf_email", use_container_width=True):
+                        email_session = st.session_state.get('email', '')
+                        if not email_session:
+                            st.warning("⚠️ Configura el correo en la barra lateral antes de enviar.")
+                        else:
+                            email_regex = r"^[\w\.-]+@[\w\.-]+\.[a-zA-Z]{2,}$"
+                            if not re.match(email_regex, email_session):
+                                st.error("❌ Formato de correo inválido en la barra lateral. Corrígelo allí.")
+                            else:
+                                pdf_copy = io.BytesIO(st.session_state['last_pdf_bytes'])
+                                with st.spinner("📤 Enviando reporte..."):
+                                    try:
+                                        exito, resultado = enviar_email_con_attachment(
+                                            email_session,
+                                            analista,
+                                            pdf_copy,
+                                            st.session_state['last_pdf_name'],
+                                            mime_main='application',
+                                            mime_sub='pdf'
+                                        )
+                                        if exito:
+                                            st.success(f"✅ Reporte enviado exitosamente a **{email_session}**")
+                                        else:
+                                            st.error(f"❌ Error al enviar: {resultado}")
+                                    except Exception as e:
+                                        st.error(f"❌ Error inesperado al enviar email: {str(e)}")
+            
         with col2:
             if st.button("📊 Exportar a Excel", use_container_width=True):
                 with st.spinner("⏳ Generando Excel..."):
@@ -368,21 +410,58 @@ def show_informe_form(fecha_analisis,analista):
                             df_flujos.to_excel(writer, sheet_name='Flujos de Caja', index=False)
                         
                         output.seek(0)
-                        
-                        # Generar nombre de archivo
+
+                        # Guardar bytes y nombre en session_state para persistencia
                         fecha_str = datetime.now().strftime('%Y%m%d_%H%M%S')
                         nombre_archivo_excel = f"Informe_{proyecto['nombre'].replace(' ', '_')}_{fecha_str}.xlsx"
-                        
-                        st.download_button(
-                            label="✅ Descargar Excel",
-                            data=output,
-                            file_name=nombre_archivo_excel,
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key="download_excel"
-                        )
-                        st.success("✅ Excel generado exitosamente")
+                        excel_bytes = output.getvalue()
+
+                        st.session_state['last_excel_bytes'] = excel_bytes
+                        st.session_state['last_excel_name'] = nombre_archivo_excel
+                        st.session_state['excel_generated'] = True
+
+                        st.success("✅ Excel generado y listo para descargar")
                     except Exception as e:
                         st.error(f"❌ Error al generar Excel: {str(e)}")
+
+            # Si hay un Excel generado en sesión, mostrar controles persistentes
+            if st.session_state.get('excel_generated'):
+                col_down, col_send = st.columns([1,1])
+                with col_down:
+                    st.download_button(
+                        label="✅ Descargar Excel",
+                        data=st.session_state['last_excel_bytes'],
+                        file_name=st.session_state['last_excel_name'],
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="download_excel_persist"
+                    )
+                with col_send:
+                    if st.button("📧 Enviar Excel por Email", key="send_excel_email", use_container_width=True):
+                        email_session = st.session_state.get('email', '')
+                        if not email_session:
+                            st.warning("⚠️ Configura el correo en la barra lateral antes de enviar.")
+                        else:
+                            email_regex = r"^[\w\.-]+@[\w\.-]+\.[a-zA-Z]{2,}$"
+                            if not re.match(email_regex, email_session):
+                                st.error("❌ Formato de correo inválido en la barra lateral. Corrígelo allí.")
+                            else:
+                                excel_copy = io.BytesIO(st.session_state['last_excel_bytes'])
+                                with st.spinner("📤 Enviando Excel por correo..."):
+                                    try:
+                                        exito, resultado = enviar_email_con_attachment(
+                                            email_session,
+                                            analista,
+                                            excel_copy,
+                                            st.session_state['last_excel_name'],
+                                            mime_main='application',
+                                            mime_sub='vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                                        )
+                                        if exito:
+                                            st.success(f"✅ Excel enviado exitosamente a **{email_session}**")
+                                        else:
+                                            st.error(f"❌ Error al enviar: {resultado}")
+                                    except Exception as e:
+                                        st.error(f"❌ Error inesperado al enviar email: {str(e)}")
         
         with col3:
             # Generar JSON con datos del proyecto
