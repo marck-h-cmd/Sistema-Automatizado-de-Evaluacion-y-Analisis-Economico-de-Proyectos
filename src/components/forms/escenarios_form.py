@@ -160,6 +160,114 @@ def show_escenarios_form():
             })
             
             st.dataframe(df_escenarios, use_container_width=True, hide_index=True)
+            
+            # Gráficos comparativos individuales
+            st.markdown("---")
+            st.markdown("### 📊 Gráficos Comparativos por Indicador")
+            
+            # Tres gráficos lado a lado
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("#### 💰 VPN por Escenario")
+                fig_vpn = go.Figure()
+                fig_vpn.add_trace(go.Bar(
+                    x=['Pesimista', 'Base', 'Optimista'],
+                    y=[vpn_pes, vpn_base, vpn_opt],
+                    marker_color=['#ff6b6b', '#ffd93d', '#6bcf7f'],
+                    text=[f'${vpn_pes:,.0f}', f'${vpn_base:,.0f}', f'${vpn_opt:,.0f}'],
+                    textposition='outside',
+                    showlegend=False
+                ))
+                fig_vpn.add_hline(y=0, line_dash="dash", line_color="gray", 
+                                 annotation_text="Equilibrio")
+                fig_vpn.update_layout(
+                    yaxis_title="VPN ($)",
+                    height=350,
+                    margin=dict(t=20, b=20),
+                    hovermode='x'
+                )
+                st.plotly_chart(fig_vpn, use_container_width=True, key="vpn_chart")
+                
+                # Interpretación de VPN debajo del gráfico (desplegable)
+                with st.expander("📝 Ver Interpretación"):
+                    if vpn_pes < 0 and vpn_base < 0 and vpn_opt < 0:
+                        st.error("⛔ **Alto Riesgo**: El VPN es negativo en todos los escenarios. El proyecto destruye valor en cualquier situación. **Recomendación: Rechazar el proyecto.**")
+                    elif vpn_pes < 0 and vpn_base < 0 and vpn_opt > 0:
+                        st.warning("⚠️ **Riesgo Muy Alto**: Solo el escenario optimista genera valor. El proyecto es extremadamente riesgoso. **Recomendación: Revisar o buscar alternativas.**")
+                    elif vpn_pes < 0 and vpn_base > 0:
+                        st.info("📊 **Riesgo Moderado**: El proyecto es viable en condiciones normales y optimistas, pero vulnerable ante escenarios adversos. **Recomendación: Implementar estrategias de mitigación de riesgos.**")
+                    elif vpn_pes > 0:
+                        st.success("✅ **Bajo Riesgo**: El VPN es positivo incluso en el escenario pesimista. El proyecto es robusto y genera valor en todas las condiciones. **Recomendación: Proceder con el proyecto.**")
+            
+            with col2:
+                st.markdown("#### 📈 TIR por Escenario")
+                fig_tir = go.Figure()
+                fig_tir.add_trace(go.Bar(
+                    x=['Pesimista', 'Base', 'Optimista'],
+                    y=[tir_pes if tir_pes else 0, tir_base if tir_base else 0, tir_opt if tir_opt else 0],
+                    marker_color=['#ff8787', '#ffe066', '#8ce99a'],
+                    text=[f'{tir_pes:.1f}%' if tir_pes else 'N/A', 
+                          f'{tir_base:.1f}%' if tir_base else 'N/A',
+                          f'{tir_opt:.1f}%' if tir_opt else 'N/A'],
+                    textposition='outside',
+                    showlegend=False
+                ))
+                # Agregar línea de WACC si existe
+                if st.session_state.proyecto_data.get('tasa_descuento'):
+                    wacc = st.session_state.proyecto_data['tasa_descuento']
+                    fig_tir.add_hline(y=wacc, line_dash="dash", line_color="red", 
+                                     annotation_text=f"WACC: {wacc}%")
+                fig_tir.update_layout(
+                    yaxis_title="TIR (%)",
+                    height=350,
+                    margin=dict(t=20, b=20),
+                    hovermode='x'
+                )
+                st.plotly_chart(fig_tir, use_container_width=True, key="tir_chart")
+                
+                # Interpretación de TIR debajo del gráfico (desplegable)
+                with st.expander("📝 Ver Interpretación"):
+                    wacc = st.session_state.proyecto_data.get('tasa_descuento', 0)
+                    if tir_pes and tir_base and tir_opt:
+                        if tir_pes > wacc and tir_base > wacc and tir_opt > wacc:
+                            st.success(f"✅ **Rentabilidad Alta**: La TIR supera el WACC ({wacc}%) en todos los escenarios, indicando que el proyecto genera retornos superiores al costo del capital.")
+                        elif tir_base > wacc and tir_opt > wacc:
+                            st.info(f"📊 **Rentabilidad Moderada**: La TIR supera el WACC ({wacc}%) en escenarios base y optimista. En el pesimista, la rentabilidad es marginal.")
+                        else:
+                            st.warning(f"⚠️ **Rentabilidad Baja**: La TIR está por debajo del WACC ({wacc}%) en algunos escenarios. El proyecto no genera suficiente retorno en condiciones adversas.")
+            
+            with col3:
+                st.markdown("#### ⚖️ B/C por Escenario")
+                fig_bc = go.Figure()
+                fig_bc.add_trace(go.Bar(
+                    x=['Pesimista', 'Base', 'Optimista'],
+                    y=[bc_pes, bc_base, bc_opt],
+                    marker_color=['#ffa8a8', '#ffec99', '#b2f2bb'],
+                    text=[f'{bc_pes:.2f}', f'{bc_base:.2f}', f'{bc_opt:.2f}'],
+                    textposition='outside',
+                    showlegend=False
+                ))
+                fig_bc.add_hline(y=1, line_dash="dash", line_color="gray", 
+                                annotation_text="B/C = 1")
+                fig_bc.update_layout(
+                    yaxis_title="Relación B/C",
+                    height=350,
+                    margin=dict(t=20, b=20),
+                    hovermode='x'
+                )
+                st.plotly_chart(fig_bc, use_container_width=True, key="bc_chart")
+                
+                # Interpretación de B/C debajo del gráfico (desplegable)
+                with st.expander("📝 Ver Interpretación"):
+                    if bc_pes > 1 and bc_base > 1 and bc_opt > 1:
+                        st.success("✅ **Beneficios Superan Costos**: La relación B/C es mayor a 1 en todos los escenarios. Por cada dólar invertido, se recupera más de un dólar.")
+                    elif bc_base > 1 and bc_opt > 1:
+                        st.info("📊 **Balance Positivo**: El proyecto genera beneficios superiores a los costos en condiciones normales y optimistas.")
+                    else:
+                        st.warning("⚠️ **Balance Ajustado**: La relación B/C indica que en algunos escenarios los beneficios no superan significativamente los costos.")
+            
+            st.markdown("---")
 
             # Si el usuario solicitó análisis por IA, mostrar aquí (debajo de la tabla)
             if st.session_state.get('ask_ia_escenarios'):
@@ -280,6 +388,7 @@ def show_escenarios_form():
                     st.info(resp)
 
             # Métricas del análisis
+            st.markdown("---")
             st.markdown("### 🎯 Análisis Estadístico")
             
             col1, col2, col3, col4 = st.columns(4)
@@ -293,113 +402,81 @@ def show_escenarios_form():
                          delta="Medida de riesgo")
             
             with col3:
-                st.metric("Rango", f"${rango:,.2f}",
-                         delta=f"${vpn_pes:,.0f} a ${vpn_opt:,.0f}")
+                coef_var = (desv_std / abs(vpn_esperado) * 100) if vpn_esperado != 0 else 0
+                st.metric("Coeficiente de Variación", f"{coef_var:.2f}%",
+                         delta="Riesgo relativo")
             
             with col4:
                 st.metric("Probabilidad de Éxito", f"{prob_exito}%",
                          delta="VPN > 0")
             
-            # Gráficos
-            col1, col2 = st.columns(2)
-
-            with col1:
-                # Gráfico de barras comparativo
-                fig1 = go.Figure()
-                fig1.add_trace(go.Bar(
-                    x=['Pesimista', 'Base', 'Optimista'],
-                    y=[vpn_pes, vpn_base, vpn_opt],
-                    marker_color=['#ff6b6b', '#ffd93d', '#6bcf7f'],
-                    text=[f"${v:,.0f}" for v in [vpn_pes, vpn_base, vpn_opt]],
-                    textposition='auto'
-                ))
-                fig1.add_hline(y=0, line_dash="dash", line_color="red")
-                fig1.add_hline(y=vpn_esperado, line_dash="dash", line_color="blue",
-                              annotation_text=f"VPN Esperado: ${vpn_esperado:,.0f}")
-                fig1.update_layout(title="VPN por Escenario", yaxis_title="VPN ($)", height=400)
-                st.plotly_chart(fig1, use_container_width=True)
-
-                # Análisis de IA para gráfico de barras
-                if st.session_state.get('analisis_ia_principal'):
-                    with st.spinner("🤖 Analizando gráfico de barras..."):
-                        prompt_barras = (
-                            "Eres un analista financiero experto. Interpreta el siguiente gráfico de barras de VPN por escenario:\n\n"
-                            f"**Datos del Gráfico de Barras:**\n"
-                            f"• Escenario Pesimista (barra roja): VPN = ${vpn_pes:,.2f}\n"
-                            f"• Escenario Base (barra amarilla): VPN = ${vpn_base:,.2f}\n"
-                            f"• Escenario Optimista (barra verde): VPN = ${vpn_opt:,.2f}\n"
-                            f"• Línea roja horizontal (línea de quiebre): VPN = $0 (punto donde el proyecto ni gana ni pierde)\n"
-                            f"• Línea azul horizontal (VPN Esperado): ${vpn_esperado:,.2f}\n\n"
-                            f"**Contexto adicional:**\n"
-                            f"• Diferencia entre escenarios: ${vpn_opt - vpn_pes:,.2f}\n"
-                            f"• Distancia del escenario base al VPN esperado: ${abs(vpn_base - vpn_esperado):,.2f}\n"
-                            f"• ¿Algún escenario está por debajo de cero? {'Sí' if vpn_pes < 0 else 'No'}\n\n"
-                            "**Análisis requerido:**\n"
-                            "1. ¿Qué patrón visual muestra el gráfico? (crecimiento uniforme, saltos abruptos, asimetría, etc.)\n"
-                            "2. ¿Qué tan cerca o lejos están las barras entre sí? ¿Qué implica esto sobre la variabilidad?\n"
-                            "3. ¿Cuál es la posición relativa del VPN esperado respecto a las tres barras?\n"
-                            "4. ¿Hay alguna barra que cruce la línea de $0? ¿Qué significa esto?\n"
-                            "5. ¿El gráfico sugiere un proyecto con alta volatilidad o estable?\n"
-                            "6. ¿Qué insights clave deberían extraer los tomadores de decisión de este gráfico?\n\n"
-                            "Proporciona un análisis visual conciso y práctico en 6-8 líneas.\n"
-                            "NO uses cursivas (*texto*). Usa negritas (**) y saltos de línea para separar ideas."
-                        )
-                        analisis_barras = consultar_groq(prompt_barras, max_tokens=600)
-
-                    with st.expander("🤖 Interpretación del Gráfico de Barras (IA)", expanded=False):
-                        st.info(analisis_barras)
-
-            with col2:
+            # Distribución de probabilidad con interpretación al lado
+            st.markdown("---")
+            col_grafico, col_interpretacion = st.columns([1.5, 1])
+            
+            with col_grafico:
+                st.markdown("#### 📊 Distribución de Probabilidades")
                 # Distribución de probabilidad
-                fig2 = go.Figure()
-                fig2.add_trace(go.Scatter(
+                fig_dist = go.Figure()
+                fig_dist.add_trace(go.Scatter(
                     x=[vpn_pes, vpn_base, vpn_opt],
                     y=[prob_pesimista, prob_base, prob_optimista],
                     mode='markers+lines',
-                    marker=dict(size=[prob_pesimista*2, prob_base*2, prob_optimista*2],
-                               color=['#ff6b6b', '#ffd93d', '#6bcf7f']),
-                    line=dict(color='gray', dash='dot')
+                    marker=dict(
+                        size=[prob_pesimista*2, prob_base*2, prob_optimista*2],
+                        color=['#ff6b6b', '#ffd93d', '#6bcf7f'],
+                        line=dict(width=2, color='white')
+                    ),
+                    line=dict(color='gray', dash='dot', width=2),
+                    name='Distribución'
                 ))
-                fig2.add_vline(x=vpn_esperado, line_dash="dash", line_color="blue",
-                              annotation_text="VPN Esperado")
-                fig2.update_layout(title="Distribución de Probabilidad",
-                                  xaxis_title="VPN ($)", yaxis_title="Probabilidad (%)",
-                                  height=400)
-                st.plotly_chart(fig2, use_container_width=True)
-
-                # Análisis de IA para gráfico de distribución
-                if st.session_state.get('analisis_ia_principal'):
-                    with st.spinner("🤖 Analizando distribución de probabilidad..."):
-                        prompt_distribucion = (
-                            "Eres un analista de riesgos experto. Interpreta el siguiente gráfico de distribución de probabilidad:\n\n"
-                            f"**Datos del Gráfico de Distribución:**\n"
-                            f"• Punto 1 (rojo): VPN ${vpn_pes:,.2f} con probabilidad {prob_pesimista}% (tamaño del marcador proporcional)\n"
-                            f"• Punto 2 (amarillo): VPN ${vpn_base:,.2f} con probabilidad {prob_base}%\n"
-                            f"• Punto 3 (verde): VPN ${vpn_opt:,.2f} con probabilidad {prob_optimista}%\n"
-                            f"• Los puntos están conectados con línea punteada gris\n"
-                            f"• Línea vertical azul marca el VPN Esperado: ${vpn_esperado:,.2f}\n\n"
-                            f"**Métricas de distribución:**\n"
-                            f"• Suma de probabilidades: {prob_pesimista + prob_base + prob_optimista}%\n"
-                            f"• Escenario con mayor probabilidad: {max([('Pesimista', prob_pesimista), ('Base', prob_base), ('Optimista', prob_optimista)], key=lambda x: x[1])[0]}\n"
-                            f"• Rango de VPN: ${rango:,.2f}\n"
-                            f"• Desviación estándar: ${desv_std:,.2f}\n\n"
-                            "**Análisis requerido:**\n"
-                            "1. ¿Qué forma tiene la distribución? (simétrica, sesgada a la izquierda/derecha, uniforme, concentrada)\n"
-                            "2. ¿Dónde está concentrada la mayor probabilidad? ¿Qué implica esto?\n"
-                            "3. ¿Cómo se relaciona la línea del VPN esperado con los puntos de la distribución?\n"
-                            "4. ¿La distribución sugiere un perfil de riesgo equilibrado o hay sesgo hacia el upside/downside?\n"
-                            "5. ¿Qué tan dispersos están los puntos? ¿Alta o baja dispersión de resultados?\n"
-                            "6. ¿Este patrón de distribución favorece la inversión en el proyecto? ¿Por qué?\n\n"
-                            "Proporciona un análisis estadístico conciso y práctico en 6-8 líneas.\n"
-                            "NO uses cursivas (*texto*). Usa negritas (**) y saltos de línea para separar ideas."
-                        )
-                        analisis_distribucion = consultar_groq(prompt_distribucion, max_tokens=600)
-
-                    with st.expander("🤖 Interpretación de la Distribución (IA)", expanded=False):
-                        st.info(analisis_distribucion)
+                fig_dist.add_vline(x=vpn_esperado, line_dash="dash", line_color="blue", line_width=2,
+                              annotation_text=f"VPN Esperado: ${vpn_esperado:,.0f}")
+                fig_dist.update_layout(
+                    xaxis_title="VPN ($)", 
+                    yaxis_title="Probabilidad (%)",
+                    height=400,
+                    hovermode='closest',
+                    showlegend=False
+                )
+                st.plotly_chart(fig_dist, use_container_width=True, key="dist_chart")
             
-            # Interpretación
-            st.markdown("### 📋 Interpretación del Análisis")
+            with col_interpretacion:
+                st.markdown("#### 🤖 Interpretación con IA")
+                # Análisis de IA para distribución
+                if st.session_state.get('ask_ia_escenarios'):
+                    with st.spinner("Analizando distribución..."):
+                        prompt_distribucion = (
+                            f"Analiza brevemente esta distribución de probabilidades:\n\n"
+                            f"• Pesimista: VPN ${vpn_pes:,.0f} con {prob_pesimista}% de probabilidad\n"
+                            f"• Base: VPN ${vpn_base:,.0f} con {prob_base}% de probabilidad\n"
+                            f"• Optimista: VPN ${vpn_opt:,.0f} con {prob_optimista}% de probabilidad\n"
+                            f"• VPN Esperado: ${vpn_esperado:,.0f}\n"
+                            f"• Desviación Estándar: ${desv_std:,.0f}\n\n"
+                            "Responde en 5-6 líneas máximo:\n"
+                            "1. ¿Qué patrón muestra la distribución?\n"
+                            "2. ¿Dónde está concentrada la probabilidad?\n"
+                            "3. ¿Nivel de riesgo del proyecto?\n"
+                            "4. ¿Recomendación breve?\n\n"
+                            "NO uses cursivas. Usa negritas (**) para resaltar conceptos clave."
+                        )
+                        analisis_dist = consultar_groq(prompt_distribucion, max_tokens=400)
+                        st.info(analisis_dist)
+                else:
+                    st.info(f"""
+                    **Análisis de Distribución:**
+                    
+                    • **Escenario más probable**: Base ({prob_base}%)
+                    • **Dispersión**: {'Alta' if desv_std > abs(vpn_esperado) * 0.5 else 'Moderada' if desv_std > abs(vpn_esperado) * 0.2 else 'Baja'}
+                    • **Riesgo**: {'Alto' if coef_var > 60 else 'Moderado' if coef_var > 30 else 'Bajo'} (CV: {coef_var:.1f}%)
+                    • **VPN Esperado**: ${vpn_esperado:,.0f}
+                    
+                    💡 Click en "Analizar con IA" arriba para análisis detallado.
+                    """)
+            
+            # Interpretación general
+            st.markdown("---")
+            st.markdown("### 📋 Conclusión del Análisis")
             
             if vpn_esperado > 0:
                 st.success(f"""
@@ -408,7 +485,7 @@ def show_escenarios_form():
                 - El VPN esperado es positivo: ${vpn_esperado:,.2f}
                 - Probabilidad de éxito (VPN > 0): {prob_exito}%
                 - El proyecto mantiene valor incluso considerando escenarios adversos
-                - Desviación estándar: ${desv_std:,.2f} indica el nivel de riesgo
+                - Coeficiente de Variación: {coef_var:.2f}% ({'Riesgo bajo' if coef_var < 30 else 'Riesgo moderado' if coef_var < 60 else 'Riesgo alto'})
                 """)
             else:
                 st.warning(f"""
