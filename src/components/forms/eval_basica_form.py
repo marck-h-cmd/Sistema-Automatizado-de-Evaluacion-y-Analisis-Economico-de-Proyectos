@@ -2,6 +2,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 from src.utils.eval_basica import calcular_vpn, calcular_tir, calcular_bc, calcular_periodo_recuperacion
+from src.utils.ai import consultar_groq, project_context
 import numpy as np
 
 def show_eval_basica_form(nombre_proyecto):
@@ -29,11 +30,6 @@ def show_eval_basica_form(nombre_proyecto):
     with col2:
         st.subheader("🎯 Tasa de Referencia")
         tmar = st.number_input("TMAR - Tasa Mínima Atractiva (%)", min_value=0.0, value=12.0, step=0.5)
-        
-        st.markdown("---")
-        if st.button("🤖 Analizar con IA", key="ia_basico", use_container_width=True):
-            with st.spinner("Consultando al asistente de IA..."):
-                st.info("💬 El análisis de IA está disponible en la versión completa con conexión API")
     
     # Cálculos
     vpn = calcular_vpn(flujos, tasa_descuento/100)
@@ -81,7 +77,25 @@ def show_eval_basica_form(nombre_proyecto):
         st.metric("Periodo Recuperación", f"{pr} años",
                  delta=f"de {num_periodos} años")
     
+    # Botón de análisis IA
+    st.markdown("---")
+    col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
+    with col_btn2:
+        if st.button("🤖 Analizar con IA", key="ia_basico", use_container_width=True):
+            with st.spinner("Consultando al asistente de IA..."):
+                consulta_usuario = "Analiza estos resultados financieros y proporciona una interpretación profesional sobre la viabilidad del proyecto, riesgos potenciales y recomendaciones estratégicas."
+                contexto = project_context(st.session_state.proyecto_data, vpn, tir if tir else 0, bc, consulta_usuario)
+                respuesta_ia = consultar_groq(contexto, max_tokens=800)
+                st.session_state.respuesta_ia_basico = respuesta_ia
+    
+    # Mostrar análisis de IA si existe
+    if 'respuesta_ia_basico' in st.session_state:
+        st.markdown("---")
+        st.markdown("### 🤖 Análisis Inteligente")
+        st.info(st.session_state.respuesta_ia_basico)
+    
     # Interpretación
+    st.markdown("---")
     st.markdown("### 📋 Interpretación de Resultados")
     
     col1, col2 = st.columns(2)

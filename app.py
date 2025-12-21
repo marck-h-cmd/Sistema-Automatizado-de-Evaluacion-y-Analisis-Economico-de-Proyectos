@@ -45,6 +45,16 @@ with st.sidebar:
     st.subheader("📅 Información General")
     fecha_analisis = st.date_input("Fecha de Análisis", datetime.now())
     analista = st.text_input("Analista", "Usuario")
+    email = st.text_input("Email del Analista")
+    
+    print( "Email desde sidebar:", email)
+    
+    if 'email' not in st.session_state:
+        st.session_state.email = ""
+       
+    if email:
+        st.session_state.email = email
+
     
     st.markdown("---")
     st.info("💡 **Tip**: Usa el asistente de IA en cada sección para obtener interpretaciones y recomendaciones personalizadas.")
