@@ -2,9 +2,110 @@ import streamlit as st
 from src.utils.ai import consultar_groq
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
+import plotly.express as px
 import numpy as np
 from src.utils.eval_basica import calcular_vpn, calcular_tir, calcular_bc
 import pandas as pd
+
+
+# ======================================================
+# FUNCIONES AUXILIARES DE RIESGO
+# ======================================================
+
+def calcular_elasticidad(vpns, variaciones):
+    """Calcula la elasticidad del VPN respecto a variaciones en una variable."""
+    base = vpns[len(vpns)//2]
+    delta_vpn = (max(vpns) - min(vpns)) / base
+    delta_var = (max(variaciones) - min(variaciones)) / 100
+    return delta_vpn / delta_var if delta_var != 0 else 0
+
+
+def margen_seguridad(punto_eq):
+    """Calcula el margen de seguridad basado en el punto de equilibrio."""
+    return abs(punto_eq) if punto_eq is not None else None
+
+
+def clasificar_riesgo(rango, max_rango):
+    """Clasifica el nivel de riesgo en función del rango de impacto."""
+    ratio = rango / max_rango
+    if ratio > 0.66:
+        return "🔴 Alto"
+    elif ratio > 0.33:
+        return "🟠 Medio"
+    return "🟢 Bajo"
+
+
+def simulacion_montecarlo(flujos, tasa, n=10000):
+    """
+    Ejecuta simulación Monte Carlo para el VPN.
+    
+    Args:
+        flujos: Array de flujos de caja
+        tasa: Tasa de descuento
+        n: Número de simulaciones (default: 10000)
+    
+    Returns:
+        Array con los VPN simulados
+    """
+    vpns = []
+    flujos_array = np.array(flujos)
+    for _ in range(n):
+        flujos_sim = flujos_array * np.random.normal(1, 0.1, len(flujos_array))
+        tasa_sim = tasa * np.random.normal(1, 0.05)
+        vpns.append(calcular_vpn(flujos_sim, tasa_sim / 100))
+    return np.array(vpns)
+
+
+def escenarios_criticos(vpns):
+    """Identifica escenarios críticos: peor, base y mejor."""
+    return {
+        "Peor Escenario": min(vpns),
+        "Caso Base": vpns[len(vpns)//2],
+        "Mejor Escenario": max(vpns)
+    }
+
+
+def elasticidad_generica(valores):
+    """Calcula elasticidad genérica para cualquier indicador."""
+    base = valores[len(valores)//2]
+    return (max(valores) - min(valores)) / abs(base) if base != 0 else 0
+
+
+def indice_estabilidad(vpns, vpn_base):
+    """Calcula índice de estabilidad del proyecto."""
+    return np.std(vpns) / abs(vpn_base) if vpn_base != 0 else 0
+
+
+def pendiente_vpn(vpns, variaciones):
+    """Calcula la pendiente de cambio del VPN."""
+    return (vpns[-1] - vpns[0]) / (variaciones[-1] - variaciones[0])
+
+
+def metricas_riesgo(vpns):
+    """Calcula métricas de riesgo basadas en simulación."""
+    return {
+        "VPN Esperado": np.mean(vpns),
+        "Desviación": np.std(vpns),
+        "Prob VPN < 0": np.mean(vpns < 0) * 100,
+        "VaR 5%": np.percentile(vpns, 5),
+        "CVaR 5%": vpns[vpns <= np.percentile(vpns, 5)].mean()
+    }
+
+
+def grafico_distribucion_vpn(vpns):
+    """Crea histograma de distribución del VPN."""
+    fig = px.histogram(vpns, nbins=50, title="Distribución del VPN")
+    fig.add_vline(x=0, line_dash="dash", line_color="red")
+    return fig
+
+
+def semaforo_riesgo(prob_neg):
+    """Clasifica el riesgo según probabilidad de VPN negativo."""
+    if prob_neg > 40:
+        return "🔴 Riesgo Alto"
+    elif prob_neg > 20:
+        return "🟠 Riesgo Medio"
+    return "🟢 Riesgo Bajo"
 
 
 

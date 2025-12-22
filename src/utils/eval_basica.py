@@ -1,4 +1,7 @@
 import numpy as np
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+
 
 # Funciones de cálculo financiero
 def calcular_vpn(flujos, tasa_descuento):
@@ -44,3 +47,78 @@ def calcular_periodo_recuperacion(flujos):
         if acumulado >= 0:
             return i
     return len(flujos)
+
+
+# ======================================================
+# FUNCIONES DE VISUALIZACIÓN Y GRÁFICOS
+# ======================================================
+
+def crear_grafico_evaluacion_completa(flujos, tasa_descuento):
+    """
+    Crea un gráfico completo con 4 subplots:
+    1. Flujos de Caja por Periodo
+    2. Flujos Acumulados
+    3. Valor Presente de Flujos
+    4. Sensibilidad VPN vs Tasa
+    
+    Returns:
+        Figura Plotly con 4 subplots
+    """
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=('Flujos de Caja por Periodo', 'Flujos Acumulados', 
+                       'Valor Presente de Flujos', 'Análisis de Sensibilidad'),
+        specs=[[{"type": "bar"}, {"type": "scatter"}],
+               [{"type": "bar"}, {"type": "scatter"}]]
+    )
+    
+    # Flujos nominales
+    periodos = list(range(len(flujos)))
+    fig.add_trace(
+        go.Bar(x=periodos, y=flujos, name="Flujo de Caja",
+               marker_color=['red' if f < 0 else 'green' for f in flujos]),
+        row=1, col=1
+    )
+    
+    # Flujos acumulados
+    flujos_acum = np.cumsum(flujos)
+    fig.add_trace(
+        go.Scatter(x=periodos, y=flujos_acum, mode='lines+markers', name="Acumulado",
+                  line=dict(color='blue', width=3)),
+        row=1, col=2
+    )
+    fig.add_hline(y=0, line_dash="dash", line_color="red", row=1, col=2)
+    
+    # Valor presente de flujos
+    vp_flujos = [flujo / (1 + tasa_descuento)**i for i, flujo in enumerate(flujos)]
+    fig.add_trace(
+        go.Bar(x=periodos, y=vp_flujos, name="Valor Presente",
+               marker_color=['red' if f < 0 else 'lightgreen' for f in vp_flujos]),
+        row=2, col=1
+    )
+    
+    # Sensibilidad de tasa
+    tasas = np.linspace(0, 30, 50)
+    vpns = [calcular_vpn(flujos, t/100) for t in tasas]
+    fig.add_trace(
+        go.Scatter(x=tasas, y=vpns, mode='lines', name="VPN vs Tasa",
+                  line=dict(color='purple', width=3)),
+        row=2, col=2
+    )
+    fig.add_hline(y=0, line_dash="dash", line_color="red", row=2, col=2)
+    fig.add_vline(x=tasa_descuento*100, line_dash="dash", line_color="green", row=2, col=2)
+    
+    fig.update_xaxes(title_text="Periodo", row=1, col=1)
+    fig.update_xaxes(title_text="Periodo", row=1, col=2)
+    fig.update_xaxes(title_text="Periodo", row=2, col=1)
+    fig.update_xaxes(title_text="Tasa de Descuento (%)", row=2, col=2)
+    
+    fig.update_yaxes(title_text="Flujo ($)", row=1, col=1)
+    fig.update_yaxes(title_text="Acumulado ($)", row=1, col=2)
+    fig.update_yaxes(title_text="VP ($)", row=2, col=1)
+    fig.update_yaxes(title_text="VPN ($)", row=2, col=2)
+    
+    fig.update_layout(height=700, showlegend=True)
+    
+    return fig
+

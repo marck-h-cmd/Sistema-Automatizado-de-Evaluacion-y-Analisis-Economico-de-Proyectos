@@ -3,100 +3,32 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
-
 from src.utils.eval_basica import calcular_vpn
 from src.utils.sensibilidad import (
     calcular_sensibilidad_univariada,
     grafico_sensibilidad_univariada,
     interpretar_sensibilidad_univariada_ia,
-
     calcular_sensibilidad_bivariada,
     grafico_sensibilidad_bivariada,
     interpretar_sensibilidad_bivariada_ia,
-
     calcular_tornado,
     grafico_tornado,
     tabla_tornado,
     interpretar_tornado_completo_ia,
-    
-    interpretar_resumen_riesgo_ia
-    
+    interpretar_resumen_riesgo_ia,
+    # Funciones auxiliares de riesgo
+    calcular_elasticidad,
+    margen_seguridad,
+    clasificar_riesgo,
+    simulacion_montecarlo,
+    escenarios_criticos,
+    elasticidad_generica,
+    indice_estabilidad,
+    pendiente_vpn,
+    metricas_riesgo,
+    grafico_distribucion_vpn,
+    semaforo_riesgo
 )
-
-# ======================================================
-# FUNCIONES AUXILIARES DE RIESGO
-# ======================================================
-
-def calcular_elasticidad(vpns, variaciones):
-    base = vpns[len(vpns)//2]
-    delta_vpn = (max(vpns) - min(vpns)) / base
-    delta_var = (max(variaciones) - min(variaciones)) / 100
-    return delta_vpn / delta_var if delta_var != 0 else 0
-
-
-def margen_seguridad(punto_eq):
-    return abs(punto_eq) if punto_eq is not None else None
-
-
-def clasificar_riesgo(rango, max_rango):
-    ratio = rango / max_rango
-    if ratio > 0.66:
-        return "🔴 Alto"
-    elif ratio > 0.33:
-        return "🟠 Medio"
-    return "🟢 Bajo"
-
-def simulacion_montecarlo(flujos, tasa, n=10000):
-    vpns = []
-    for _ in range(n):
-        flujos_sim = flujos * np.random.normal(1, 0.1, len(flujos))
-        tasa_sim = tasa * np.random.normal(1, 0.05)
-        vpns.append(calcular_vpn(flujos_sim, tasa_sim))
-    return np.array(vpns)
-
-
-def escenarios_criticos(vpns):
-    return {
-        "Peor Escenario": min(vpns),
-        "Caso Base": vpns[len(vpns)//2],
-        "Mejor Escenario": max(vpns)
-    }
-
-
-
-def elasticidad_generica(valores):
-    base = valores[len(valores)//2]
-    return (max(valores) - min(valores)) / abs(base) if base != 0 else 0
-
-
-def indice_estabilidad(vpns, vpn_base):
-    return np.std(vpns) / abs(vpn_base)
-
-
-def pendiente_vpn(vpns, variaciones):
-    return (vpns[-1] - vpns[0]) / (variaciones[-1] - variaciones[0])
-
-def metricas_riesgo(vpns):
-    return {
-        "VPN Esperado": np.mean(vpns),
-        "Desviación": np.std(vpns),
-        "Prob VPN < 0": np.mean(vpns < 0) * 100,
-        "VaR 5%": np.percentile(vpns, 5),
-        "CVaR 5%": vpns[vpns <= np.percentile(vpns, 5)].mean()
-    }
-
-def grafico_distribucion_vpn(vpns):
-    fig = px.histogram(vpns, nbins=50, title="Distribución del VPN")
-    fig.add_vline(x=0, line_dash="dash", line_color="red")
-    return fig
-
-def semaforo_riesgo(prob_neg):
-    if prob_neg > 40:
-        return "🔴 Riesgo Alto"
-    elif prob_neg > 20:
-        return "🟠 Riesgo Medio"
-    return "🟢 Riesgo Bajo"
-
 
 # =============================
 # ESTILOS DASHBOARD

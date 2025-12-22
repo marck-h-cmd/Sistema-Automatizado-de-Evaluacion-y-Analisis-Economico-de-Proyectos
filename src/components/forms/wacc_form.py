@@ -1,7 +1,16 @@
 import streamlit as st
 from plotly.subplots import make_subplots   
 import plotly.graph_objects as go
-from src.utils.wacc import calcular_wacc
+from src.utils.wacc import (
+    calcular_wacc,
+    calcular_capm,
+    calcular_proporciones_capital,
+    calcular_escudo_fiscal,
+    crear_grafico_estructura_capital,
+    crear_grafico_componentes_wacc,
+    calcular_sensibilidad_wacc,
+    crear_grafico_sensibilidad_wacc
+)
 from src.utils.eval_basica import calcular_vpn, calcular_tir
 from src.utils.ai import consultar_groq, project_context
 import numpy as np
@@ -73,13 +82,13 @@ def show_wacc_form():
     wacc = calcular_wacc(patrimonio, deuda, costo_patrimonio, costo_deuda, tasa_impuesto)
     
     # CAPM
-    ke_capm = tasa_libre_riesgo + beta * prima_mercado + prima_pais
+    ke_capm = calcular_capm(tasa_libre_riesgo, beta, prima_mercado, prima_pais)
     
-    total_inversion = patrimonio + deuda
-    prop_patrimonio = patrimonio / total_inversion if total_inversion > 0 else 0
-    prop_deuda = deuda / total_inversion if total_inversion > 0 else 0
+    # Proporciones de capital
+    prop_patrimonio, prop_deuda, total_inversion = calcular_proporciones_capital(patrimonio, deuda)
     
-    escudo_fiscal = deuda * (costo_deuda/100) * (tasa_impuesto/100)
+    # Escudo fiscal
+    escudo_fiscal = calcular_escudo_fiscal(deuda, costo_deuda, tasa_impuesto)
     
     st.markdown("---")
     st.subheader("📊 Resultados del Análisis")
@@ -145,67 +154,23 @@ def show_wacc_form():
     col1, col2 = st.columns(2)
     
     with col1:
-        # Estructura de capital
-        fig1 = go.Figure(data=[go.Pie(
-            labels=['Patrimonio', 'Deuda'],
-            values=[patrimonio, deuda],
-            hole=0.4,
-            marker_colors=['#4CAF50', '#FF9800'],
-            text=[f"${patrimonio:,.0f}<br>{prop_patrimonio*100:.1f}%",
-                  f"${deuda:,.0f}<br>{prop_deuda*100:.1f}%"],
-            textposition='auto'
-        )])
-        fig1.update_layout(title="Estructura de Capital", height=400)
+        fig1 = crear_grafico_estructura_capital(patrimonio, deuda, prop_patrimonio, prop_deuda)
         st.plotly_chart(fig1, use_container_width=True)
     
     with col2:
-        # Componentes del WACC
         costo_patrimonio_ponderado = prop_patrimonio * costo_patrimonio
         costo_deuda_ponderado = prop_deuda * costo_deuda * (1 - tasa_impuesto/100)
         
-        fig2 = go.Figure(data=[go.Bar(
-            x=['Costo Patrimonio', 'Costo Deuda (después impuestos)', 'WACC'],
-            y=[costo_patrimonio_ponderado, costo_deuda_ponderado, wacc],
-            marker_color=['#4CAF50', '#FF9800', '#2196F3'],
-            text=[f"{costo_patrimonio_ponderado:.2f}%", 
-                  f"{costo_deuda_ponderado:.2f}%",
-                  f"{wacc:.2f}%"],
-            textposition='auto'
-        )])
-        fig2.update_layout(title="Componentes del WACC (%)", yaxis_title="Tasa (%)", height=400)
+        fig2 = crear_grafico_componentes_wacc(costo_patrimonio_ponderado, costo_deuda_ponderado, wacc)
         st.plotly_chart(fig2, use_container_width=True)
     
     # Análisis de sensibilidad del WACC
     st.markdown("### 📈 Sensibilidad del WACC")
     
-    ratios_de = np.linspace(0, 2, 20)
-    waccs = []
+    ratios_de, waccs = calcular_sensibilidad_wacc(total_inversion, costo_patrimonio, costo_deuda, tasa_impuesto)
+    ratio_actual = deuda / patrimonio if patrimonio > 0 else 0
     
-    for ratio in ratios_de:
-        if ratio == 0:
-            d = 0
-            e = total_inversion
-        else:
-            d = total_inversion * ratio / (1 + ratio)
-            e = total_inversion - d
-        wacc_temp = calcular_wacc(e, d, costo_patrimonio, costo_deuda, tasa_impuesto)
-        waccs.append(wacc_temp)
-    
-    fig3 = go.Figure()
-    fig3.add_trace(go.Scatter(
-        x=ratios_de, y=waccs, mode='lines+markers',
-        line=dict(color='blue', width=3),
-        marker=dict(size=8)
-    ))
-    fig3.add_vline(x=deuda/patrimonio if patrimonio > 0 else 0, 
-                   line_dash="dash", line_color="red",
-                   annotation_text="Estructura Actual")
-    fig3.update_layout(
-        title="WACC vs Relación Deuda/Patrimonio",
-        xaxis_title="D/E Ratio",
-        yaxis_title="WACC (%)",
-        height=400
-    )
+    fig3 = crear_grafico_sensibilidad_wacc(ratios_de, waccs, ratio_actual)
     st.plotly_chart(fig3, use_container_width=True)
     
     # Recomendaciones

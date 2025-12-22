@@ -1,6 +1,11 @@
 import streamlit as st
 from src.utils.eval_basica import calcular_vpn, calcular_tir, calcular_bc, calcular_periodo_recuperacion
 from src.utils.ai import consultar_groq
+from src.utils.escenarios import (
+    calcular_escenarios, calcular_estadisticas_escenarios, crear_tabla_escenarios,
+    crear_grafico_vpn, crear_grafico_tir, crear_grafico_bc,
+    crear_grafico_distribucion, crear_grafico_probabilidades
+)
 import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
@@ -63,13 +68,7 @@ def show_escenarios_form():
         with col2:
             st.subheader("🎲 Probabilidades")
             
-            fig_prob = go.Figure(data=[go.Pie(
-                labels=['Pesimista', 'Base', 'Optimista'],
-                values=[prob_pesimista, prob_base, prob_optimista],
-                hole=0.4,
-                marker_colors=['#ff6b6b', '#ffd93d', '#6bcf7f']
-            )])
-            fig_prob.update_layout(height=300)
+            fig_prob = crear_grafico_probabilidades(prob_pesimista, prob_base, prob_optimista)
             st.plotly_chart(fig_prob, use_container_width=True)
             
             # Preparar petición IA: marcador para procesar después de calcular resultados
@@ -118,46 +117,37 @@ def show_escenarios_form():
             flujos_base = st.session_state.proyecto_data['flujos']
             tasa = st.session_state.proyecto_data['tasa_descuento'] / 100
             
-            # Pesimista
-            flujos_pes = [flujos_base[0]] + [f * factor_pesimista for f in flujos_base[1:]]
-            vpn_pes = calcular_vpn(flujos_pes, tasa)
-            tir_pes = calcular_tir(flujos_pes)
-            bc_pes = calcular_bc(flujos_pes, tasa)
+            # Usar función para calcular escenarios
+            escenarios = calcular_escenarios(flujos_base, factor_pesimista, factor_optimista, tasa)
+            vpn_pes = escenarios['pesimista']['vpn']
+            tir_pes = escenarios['pesimista']['tir']
+            bc_pes = escenarios['pesimista']['bc']
             
-            # Base
-            vpn_base = st.session_state.proyecto_data['vpn']
-            tir_base = st.session_state.proyecto_data['tir']
-            bc_base = st.session_state.proyecto_data['bc']
+            vpn_base = escenarios['base']['vpn']
+            tir_base = escenarios['base']['tir']
+            bc_base = escenarios['base']['bc']
             
-            # Optimista
-            flujos_opt = [flujos_base[0]] + [f * factor_optimista for f in flujos_base[1:]]
-            vpn_opt = calcular_vpn(flujos_opt, tasa)
-            tir_opt = calcular_tir(flujos_opt)
-            bc_opt = calcular_bc(flujos_opt, tasa)
+            vpn_opt = escenarios['optimista']['vpn']
+            tir_opt = escenarios['optimista']['tir']
+            bc_opt = escenarios['optimista']['bc']
             
-            # VPN Esperado
-            vpn_esperado = (vpn_pes * prob_pesimista + vpn_base * prob_base + vpn_opt * prob_optimista) / 100
-            
-            # Estadísticas
-            vpns = [vpn_pes, vpn_base, vpn_opt]
-            probs = [prob_pesimista/100, prob_base/100, prob_optimista/100]
-            desv_std = np.sqrt(sum([p * (v - vpn_esperado)**2 for v, p in zip(vpns, probs)]))
-            rango = vpn_opt - vpn_pes
-            prob_exito = (prob_base + prob_optimista) if vpn_base > 0 else prob_optimista
+            # Calcular estadísticas
+            stats = calcular_estadisticas_escenarios(vpn_pes, vpn_base, vpn_opt,
+                                                      prob_pesimista, prob_base, prob_optimista)
+            vpn_esperado = stats['vpn_esperado']
+            desv_std = stats['desv_std']
+            rango = stats['rango']
+            prob_exito = stats['prob_exito']
+            coef_var = stats['coef_var']
             
             st.markdown("---")
             st.subheader("📊 Resultados por Escenario")
             
             # Tabla comparativa
-            df_escenarios = pd.DataFrame({
-                'Escenario': ['Pesimista', 'Base', 'Optimista'],
-                'Probabilidad': [f"{prob_pesimista}%", f"{prob_base}%", f"{prob_optimista}%"],
-                'VPN': [f"${vpn_pes:,.2f}", f"${vpn_base:,.2f}", f"${vpn_opt:,.2f}"],
-                'TIR': [f"{tir_pes:.2f}%" if tir_pes else "N/A", 
-                       f"{tir_base:.2f}%" if tir_base else "N/A",
-                       f"{tir_opt:.2f}%" if tir_opt else "N/A"],
-                'B/C': [f"{bc_pes:.2f}", f"{bc_base:.2f}", f"{bc_opt:.2f}"]
-            })
+            df_escenarios = crear_tabla_escenarios(prob_pesimista, prob_base, prob_optimista,
+                                                   vpn_pes, vpn_base, vpn_opt,
+                                                   tir_pes, tir_base, tir_opt,
+                                                   bc_pes, bc_base, bc_opt)
             
             st.dataframe(df_escenarios, use_container_width=True, hide_index=True)
             
@@ -170,23 +160,7 @@ def show_escenarios_form():
             
             with col1:
                 st.markdown("#### 💰 VPN por Escenario")
-                fig_vpn = go.Figure()
-                fig_vpn.add_trace(go.Bar(
-                    x=['Pesimista', 'Base', 'Optimista'],
-                    y=[vpn_pes, vpn_base, vpn_opt],
-                    marker_color=['#ff6b6b', '#ffd93d', '#6bcf7f'],
-                    text=[f'${vpn_pes:,.0f}', f'${vpn_base:,.0f}', f'${vpn_opt:,.0f}'],
-                    textposition='outside',
-                    showlegend=False
-                ))
-                fig_vpn.add_hline(y=0, line_dash="dash", line_color="gray", 
-                                 annotation_text="Equilibrio")
-                fig_vpn.update_layout(
-                    yaxis_title="VPN ($)",
-                    height=350,
-                    margin=dict(t=20, b=20),
-                    hovermode='x'
-                )
+                fig_vpn = crear_grafico_vpn(vpn_pes, vpn_base, vpn_opt)
                 st.plotly_chart(fig_vpn, use_container_width=True, key="vpn_chart")
                 
                 # Interpretación de VPN debajo del gráfico (desplegable)
@@ -202,28 +176,8 @@ def show_escenarios_form():
             
             with col2:
                 st.markdown("#### 📈 TIR por Escenario")
-                fig_tir = go.Figure()
-                fig_tir.add_trace(go.Bar(
-                    x=['Pesimista', 'Base', 'Optimista'],
-                    y=[tir_pes if tir_pes else 0, tir_base if tir_base else 0, tir_opt if tir_opt else 0],
-                    marker_color=['#ff8787', '#ffe066', '#8ce99a'],
-                    text=[f'{tir_pes:.1f}%' if tir_pes else 'N/A', 
-                          f'{tir_base:.1f}%' if tir_base else 'N/A',
-                          f'{tir_opt:.1f}%' if tir_opt else 'N/A'],
-                    textposition='outside',
-                    showlegend=False
-                ))
-                # Agregar línea de WACC si existe
-                if st.session_state.proyecto_data.get('tasa_descuento'):
-                    wacc = st.session_state.proyecto_data['tasa_descuento']
-                    fig_tir.add_hline(y=wacc, line_dash="dash", line_color="red", 
-                                     annotation_text=f"WACC: {wacc}%")
-                fig_tir.update_layout(
-                    yaxis_title="TIR (%)",
-                    height=350,
-                    margin=dict(t=20, b=20),
-                    hovermode='x'
-                )
+                wacc = st.session_state.proyecto_data.get('tasa_descuento')
+                fig_tir = crear_grafico_tir(tir_pes, tir_base, tir_opt, wacc)
                 st.plotly_chart(fig_tir, use_container_width=True, key="tir_chart")
                 
                 # Interpretación de TIR debajo del gráfico (desplegable)
@@ -239,23 +193,7 @@ def show_escenarios_form():
             
             with col3:
                 st.markdown("#### ⚖️ B/C por Escenario")
-                fig_bc = go.Figure()
-                fig_bc.add_trace(go.Bar(
-                    x=['Pesimista', 'Base', 'Optimista'],
-                    y=[bc_pes, bc_base, bc_opt],
-                    marker_color=['#ffa8a8', '#ffec99', '#b2f2bb'],
-                    text=[f'{bc_pes:.2f}', f'{bc_base:.2f}', f'{bc_opt:.2f}'],
-                    textposition='outside',
-                    showlegend=False
-                ))
-                fig_bc.add_hline(y=1, line_dash="dash", line_color="gray", 
-                                annotation_text="B/C = 1")
-                fig_bc.update_layout(
-                    yaxis_title="Relación B/C",
-                    height=350,
-                    margin=dict(t=20, b=20),
-                    hovermode='x'
-                )
+                fig_bc = crear_grafico_bc(bc_pes, bc_base, bc_opt)
                 st.plotly_chart(fig_bc, use_container_width=True, key="bc_chart")
                 
                 # Interpretación de B/C debajo del gráfico (desplegable)
@@ -416,29 +354,9 @@ def show_escenarios_form():
             
             with col_grafico:
                 st.markdown("#### 📊 Distribución de Probabilidades")
-                # Distribución de probabilidad
-                fig_dist = go.Figure()
-                fig_dist.add_trace(go.Scatter(
-                    x=[vpn_pes, vpn_base, vpn_opt],
-                    y=[prob_pesimista, prob_base, prob_optimista],
-                    mode='markers+lines',
-                    marker=dict(
-                        size=[prob_pesimista*2, prob_base*2, prob_optimista*2],
-                        color=['#ff6b6b', '#ffd93d', '#6bcf7f'],
-                        line=dict(width=2, color='white')
-                    ),
-                    line=dict(color='gray', dash='dot', width=2),
-                    name='Distribución'
-                ))
-                fig_dist.add_vline(x=vpn_esperado, line_dash="dash", line_color="blue", line_width=2,
-                              annotation_text=f"VPN Esperado: ${vpn_esperado:,.0f}")
-                fig_dist.update_layout(
-                    xaxis_title="VPN ($)", 
-                    yaxis_title="Probabilidad (%)",
-                    height=400,
-                    hovermode='closest',
-                    showlegend=False
-                )
+                fig_dist = crear_grafico_distribucion(vpn_pes, vpn_base, vpn_opt,
+                                                      prob_pesimista, prob_base, prob_optimista,
+                                                      vpn_esperado)
                 st.plotly_chart(fig_dist, use_container_width=True, key="dist_chart")
             
             with col_interpretacion:
