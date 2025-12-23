@@ -3,17 +3,8 @@ import requests
 import streamlit as st
 import os
 
-
-
-
 def consultar_groq(prompt, max_tokens: int = 600):
-    """Consulta un modelo a través de Groq.
-
-    Requiere configurar la clave en `st.secrets['GROQ_API_KEY']` o la variable de entorno `GROQ_API_KEY`.
-    También puede configurarse `st.secrets['GROQ_MODEL']` para usar un modelo específico (por defecto: llama-3.3-70b-versatile).
-
-    Nota: No guardes claves en el código. Pega tu clave en `secrets.toml` o en el panel de Secrets de Streamlit.
-    """
+ 
     api_key = st.secrets.get('GROQ_API_KEY') or os.environ.get('GROQ_API_KEY')
     if not api_key:
         return ("IA (Groq) no disponible: configure la clave `GROQ_API_KEY` en `st.secrets` "
@@ -70,6 +61,4 @@ def project_context(proyecto, vpn, tir, bc, consulta_ia):
                     
                     Consulta del usuario: {consulta_ia}
                     """
-
-
     return contexto
